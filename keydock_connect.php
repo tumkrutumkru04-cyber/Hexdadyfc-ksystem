@@ -3,16 +3,18 @@ header('Content-Type: application/json');
 
 date_default_timezone_set('Asia/Kolkata');
 
-// --- READ JSON BODY ---
+// JSON body read
 $raw_input = file_get_contents('php://input');
 $json_data = json_decode($raw_input, true);
 
-// Get parameters from JSON, GET, or POST
 $key_name = $json_data['key_name'] ?? $_GET['key_name'] ?? $_POST['key_name'] ?? '';
 $device_id = $json_data['device_id'] ?? $_GET['device_id'] ?? $_POST['device_id'] ?? 'android-test';
 $nonce = $json_data['nonce'] ?? $_GET['nonce'] ?? $_POST['nonce'] ?? 'jitu-app';
 
 $store_file = __DIR__ . '/keys.json';
+
+// HMAC Secret (from APK)
+$hmac_secret = "Jx9#kR2\$mP5@nL8!vQ3&yB6*zA4%wC1^eT7";
 
 // Load keys
 $keys = [];
@@ -20,7 +22,6 @@ if (file_exists($store_file)) {
     $keys = json_decode(file_get_contents($store_file), true) ?? [];
 }
 
-// Check if key exists
 if (isset($keys[$key_name])) {
     $key_data = $keys[$key_name];
     
@@ -30,7 +31,7 @@ if (isset($keys[$key_name])) {
         exit;
     }
     
-    // --- DEVICE ARRAY LOGIC ---
+    // Device array logic
     if (!isset($key_data['devices']) || !is_array($key_data['devices'])) {
         $key_data['devices'] = [];
     }
@@ -49,12 +50,25 @@ if (isset($keys[$key_name])) {
     $keys[$key_name] = $key_data;
     file_put_contents($store_file, json_encode($keys, JSON_PRETTY_PRINT));
     
+    // Calculate remaining
     $now = time();
     $expiry = $key_data['expiry_timestamp'] / 1000;
     $remaining = max(0, $expiry - $now);
     $remaining_hours = floor($remaining / 3600);
     $remaining_minutes = floor(($remaining % 3600) / 60);
     
+    $expires_at = date('Y-m-d H:i:s', $expiry);
+    $remaining_seconds = $remaining;
+    
+    // --- BUILD HMAC MESSAGE (EXACT APK FORMAT) ---
+    $message = "ok=true&nonce=" . $nonce;
+    $message .= "&expires_at=" . $expires_at;
+    $message .= "&remaining_seconds=" . $remaining_seconds;
+    
+    // Generate HMAC
+    $hmac = hash_hmac('sha256', $message, $hmac_secret);
+    
+    // Build response
     $response = [
         "ok" => true,
         "status" => true,
@@ -71,11 +85,11 @@ if (isset($keys[$key_name])) {
         "cheat" => null,
         "seller" => "",
         "validity" => $key_data['validity'],
-        "expires_at" => date('Y-m-d H:i:s', $expiry),
-        "remaining_seconds" => $remaining,
+        "expires_at" => $expires_at,
+        "remaining_seconds" => $remaining_seconds,
         "remaining" => $remaining_hours . "h " . $remaining_minutes . "m",
-        "hmac" => hash('sha256', $key_name . $nonce . 'jitu-secret'),
-        "nonce" => $nonce
+        "nonce" => $nonce,
+        "hmac" => $hmac
     ];
     echo json_encode($response, JSON_PRETTY_PRINT);
     
@@ -85,9 +99,7 @@ if (isset($keys[$key_name])) {
         "error" => "Invalid key",
         "debug" => [
             "looking_for" => $key_name,
-            "device_id" => $device_id,
-            "keys_found" => array_keys($keys),
-            "raw_input" => $raw_input
+            "keys_found" => array_keys($keys)
         ]
     ], JSON_PRETTY_PRINT);
 }
