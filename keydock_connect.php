@@ -1,20 +1,25 @@
 <?php
 header('Content-Type: application/json');
 
-// Set timezone to IST (India)
 date_default_timezone_set('Asia/Kolkata');
 
 $key_name = $_GET['key_name'] ?? $_POST['key_name'] ?? '';
 $device_id = $_GET['device_id'] ?? $_POST['device_id'] ?? 'android-test';
 $nonce = $_GET['nonce'] ?? $_POST['nonce'] ?? 'jitu-app';
 
-$store_file = 'keys.json';
+// Use absolute path
+$store_file = __DIR__ . '/keys.json';
 
 // Load keys
 $keys = [];
 if (file_exists($store_file)) {
     $keys = json_decode(file_get_contents($store_file), true) ?? [];
 }
+
+// DEBUG: Log what's happening
+error_log("Looking for key: " . $key_name);
+error_log("Store file: " . $store_file);
+error_log("Keys count: " . count($keys));
 
 // Check if key exists
 if (isset($keys[$key_name])) {
@@ -26,14 +31,14 @@ if (isset($keys[$key_name])) {
         exit;
     }
     
-    // --- DEVICE ARRAY LOGIC (NO LIMIT BY DEFAULT) ---
+    // --- DEVICE ARRAY LOGIC ---
     if (!isset($key_data['devices']) || !is_array($key_data['devices'])) {
         $key_data['devices'] = [];
     }
     
     // Add device if not already there
     if (!in_array($device_id, $key_data['devices'])) {
-        // Check max_devices (0 or -1 = unlimited)
+        // max_devices = 0 means unlimited
         if ($key_data['max_devices'] > 0 && count($key_data['devices']) >= $key_data['max_devices']) {
             echo json_encode(["ok" => false, "error" => "Device limit reached"], JSON_PRETTY_PRINT);
             exit;
@@ -47,14 +52,14 @@ if (isset($keys[$key_name])) {
     $keys[$key_name] = $key_data;
     file_put_contents($store_file, json_encode($keys, JSON_PRETTY_PRINT));
     
-    // Calculate remaining time
+    // Calculate remaining
     $now = time();
     $expiry = $key_data['expiry_timestamp'] / 1000;
     $remaining = max(0, $expiry - $now);
     $remaining_hours = floor($remaining / 3600);
     $remaining_minutes = floor(($remaining % 3600) / 60);
     
-    // Build response (SAME FORMAT AS YOUR ORIGINAL)
+    // Response
     $response = [
         "ok" => true,
         "status" => true,
@@ -80,6 +85,14 @@ if (isset($keys[$key_name])) {
     echo json_encode($response, JSON_PRETTY_PRINT);
     
 } else {
-    echo json_encode(["ok" => false, "error" => "Invalid key"], JSON_PRETTY_PRINT);
+    echo json_encode([
+        "ok" => false,
+        "error" => "Invalid key",
+        "debug" => [
+            "looking_for" => $key_name,
+            "keys_found" => array_keys($keys),
+            "store_file" => $store_file
+        ]
+    ], JSON_PRETTY_PRINT);
 }
 ?>
