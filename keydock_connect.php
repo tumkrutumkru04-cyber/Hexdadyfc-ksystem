@@ -37,6 +37,7 @@ if (isset($keys[$key_name])) {
     }
     
     if (!in_array($device_id, $key_data['devices'])) {
+        // max_devices = 0 means unlimited
         if ($key_data['max_devices'] > 0 && count($key_data['devices']) >= $key_data['max_devices']) {
             echo json_encode(["ok" => false, "error" => "Device limit reached"], JSON_PRETTY_PRINT);
             exit;
